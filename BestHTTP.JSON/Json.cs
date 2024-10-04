@@ -4,467 +4,338 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace BestHTTP.JSON;
-
-public class Json
+namespace BestHTTP.JSON
 {
-    private const int TOKEN_NONE = 0;
-
-    private const int TOKEN_CURLY_OPEN = 1;
-
-    private const int TOKEN_CURLY_CLOSE = 2;
-
-    private const int TOKEN_SQUARED_OPEN = 3;
-
-    private const int TOKEN_SQUARED_CLOSE = 4;
-
-    private const int TOKEN_COLON = 5;
-
-    private const int TOKEN_COMMA = 6;
-
-    private const int TOKEN_STRING = 7;
-
-    private const int TOKEN_NUMBER = 8;
-
-    private const int TOKEN_TRUE = 9;
-
-    private const int TOKEN_FALSE = 10;
-
-    private const int TOKEN_NULL = 11;
-
-    private const int BUILDER_CAPACITY = 2000;
-
-    public static object Decode(string json)
+    public class Json
     {
-        bool success = true;
-        return Decode(json, ref success);
-    }
-
-    public static object Decode(string json, ref bool success)
-    {
-        success = true;
-        if (json != null)
+        // Decode JSON string into object
+        public static object Decode(string json)
         {
-            char[] json2 = json.ToCharArray();
+            bool success = true;
+            return json != null ? Decode(json.ToCharArray(), ref success) : null;
+        }
+
+        // Internal decode with reference to success state
+        public static object Decode(string json, ref bool success)
+        {
+            success = true;
+            return json != null ? Decode(json.ToCharArray(), ref success) : null;
+        }
+
+        // Convert object to JSON string
+        public static string Encode(object json)
+        {
+            StringBuilder sb = new StringBuilder(2000);
+            return SerializeValue(json, sb) ? sb.ToString() : null;
+        }
+
+        // Core parser for the JSON value
+        protected static object Decode(char[] json, ref bool success)
+        {
             int index = 0;
-            return ParseValue(json2, ref index, ref success);
+            return ParseValue(json, ref index, ref success);
         }
-        return null;
-    }
 
-    public static string Encode(object json)
-    {
-        StringBuilder stringBuilder = new StringBuilder(2000);
-        if (!SerializeValue(json, stringBuilder))
+        // Parse a JSON object (key-value pairs)
+        protected static Dictionary<string, object> ParseObject(char[] json, ref int index, ref bool success)
         {
-            return null;
-        }
-        return stringBuilder.ToString();
-    }
+            Dictionary<string, object> dict = new();
+            NextToken(json, ref index); // Skip '{'
+            bool done = false;
 
-    protected static Dictionary<string, object> ParseObject(char[] json, ref int index, ref bool success)
-    {
-        Dictionary<string, object> dictionary = new Dictionary<string, object>();
-        NextToken(json, ref index);
-        bool flag = false;
-        while (!flag)
+            while (!done)
+            {
+                int token = LookAhead(json, index);
+                if (token == 0)
+                {
+                    success = false;
+                    return null;
+                }
+                else if (token == 6) // Skip commas
+                {
+                    NextToken(json, ref index);
+                    continue;
+                }
+                else if (token == 2) // End object
+                {
+                    NextToken(json, ref index);
+                    return dict;
+                }
+
+                string key = ParseString(json, ref index, ref success);
+                if (!success) return null;
+
+                if (NextToken(json, ref index) != 5) // Expect colon
+                {
+                    success = false;
+                    return null;
+                }
+
+                dict[key] = ParseValue(json, ref index, ref success);
+                if (!success) return null;
+            }
+
+            return dict;
+        }
+
+        // Parse a JSON array (list of values)
+        protected static List<object> ParseArray(char[] json, ref int index, ref bool success)
+        {
+            List<object> list = new();
+            NextToken(json, ref index); // Skip '['
+            bool done = false;
+
+            while (!done)
+            {
+                int token = LookAhead(json, index);
+                if (token == 0)
+                {
+                    success = false;
+                    return null;
+                }
+                else if (token == 6) // Skip commas
+                {
+                    NextToken(json, ref index);
+                    continue;
+                }
+                else if (token == 4) // End array
+                {
+                    NextToken(json, ref index);
+                    break;
+                }
+
+                list.Add(ParseValue(json, ref index, ref success));
+                if (!success) return null;
+            }
+
+            return list;
+        }
+
+        // Parse an individual JSON value
+        protected static object ParseValue(char[] json, ref int index, ref bool success)
         {
             switch (LookAhead(json, index))
             {
-                case 0:
+                case 7: return ParseString(json, ref index, ref success);
+                case 8: return ParseNumber(json, ref index, ref success);
+                case 1: return ParseObject(json, ref index, ref success);
+                case 3: return ParseArray(json, ref index, ref success);
+                case 9: NextToken(json, ref index); return true;
+                case 10: NextToken(json, ref index); return false;
+                case 11: NextToken(json, ref index); return null;
+                default:
                     success = false;
                     return null;
-                case 6:
-                    NextToken(json, ref index);
-                    continue;
-                case 2:
-                    NextToken(json, ref index);
-                    return dictionary;
             }
-            string key = ParseString(json, ref index, ref success);
-            if (!success)
-            {
-                success = false;
-                return null;
-            }
-            int num = NextToken(json, ref index);
-            if (num != 5)
-            {
-                success = false;
-                return null;
-            }
-            object value = ParseValue(json, ref index, ref success);
-            if (!success)
-            {
-                success = false;
-                return null;
-            }
-            dictionary[key] = value;
         }
-        return dictionary;
-    }
 
-    protected static List<object> ParseArray(char[] json, ref int index, ref bool success)
-    {
-        List<object> list = new List<object>();
-        NextToken(json, ref index);
-        bool flag = false;
-        while (!flag)
+        // Parse a string value
+        protected static string ParseString(char[] json, ref int index, ref bool success)
         {
-            switch (LookAhead(json, index))
-            {
-                case 0:
-                    success = false;
-                    return null;
-                case 6:
-                    NextToken(json, ref index);
-                    continue;
-                case 4:
-                    break;
-                default:
-                    {
-                        object item = ParseValue(json, ref index, ref success);
-                        if (!success)
-                        {
-                            return null;
-                        }
-                        list.Add(item);
-                        continue;
-                    }
-            }
-            NextToken(json, ref index);
-            break;
-        }
-        return list;
-    }
+            StringBuilder sb = new();
+            EatWhitespace(json, ref index);
+            char c = json[index++]; // Skip starting quote
 
-    protected static object ParseValue(char[] json, ref int index, ref bool success)
-    {
-        switch (LookAhead(json, index))
-        {
-            case 7:
-                return ParseString(json, ref index, ref success);
-            case 8:
-                return ParseNumber(json, ref index, ref success);
-            case 1:
-                return ParseObject(json, ref index, ref success);
-            case 3:
-                return ParseArray(json, ref index, ref success);
-            case 9:
-                NextToken(json, ref index);
-                return true;
-            case 10:
-                NextToken(json, ref index);
-                return false;
-            case 11:
-                NextToken(json, ref index);
-                return null;
-            default:
-                success = false;
-                return null;
-        }
-    }
-
-    protected static string ParseString(char[] json, ref int index, ref bool success)
-    {
-        StringBuilder stringBuilder = new StringBuilder(2000);
-        EatWhitespace(json, ref index);
-        char c = json[index++];
-        bool flag = false;
-        while (!flag && index != json.Length)
-        {
-            c = json[index++];
-            switch (c)
+            while (index < json.Length)
             {
-                case '"':
-                    flag = true;
-                    break;
-                case '\\':
-                    if (index == json.Length)
+                c = json[index++];
+                if (c == '"') return sb.ToString();
+                if (c == '\\')
+                {
+                    if (index == json.Length) break;
+                    c = json[index++];
+                    sb.Append(c switch
                     {
-                        break;
-                    }
-                    switch (json[index++])
-                    {
-                        case '"':
-                            stringBuilder.Append('"');
-                            continue;
-                        case '\\':
-                            stringBuilder.Append('\\');
-                            continue;
-                        case '/':
-                            stringBuilder.Append('/');
-                            continue;
-                        case 'b':
-                            stringBuilder.Append('\b');
-                            continue;
-                        case 'f':
-                            stringBuilder.Append('\f');
-                            continue;
-                        case 'n':
-                            stringBuilder.Append('\n');
-                            continue;
-                        case 'r':
-                            stringBuilder.Append('\r');
-                            continue;
-                        case 't':
-                            stringBuilder.Append('\t');
-                            continue;
-                        case 'u':
-                            break;
-                        default:
-                            continue;
-                    }
-                    if (json.Length - index >= 4)
-                    {
-                        if (!(success = uint.TryParse(new string(json, index, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var result)))
-                        {
-                            return "";
-                        }
-                        stringBuilder.Append(char.ConvertFromUtf32((int)result));
-                        index += 4;
-                        continue;
-                    }
-                    break;
-                default:
-                    stringBuilder.Append(c);
-                    continue;
+                        '"' => '"',
+                        '\\' => '\\',
+                        '/' => '/',
+                        'b' => '\b',
+                        'f' => '\f',
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        'u' => ParseUnicode(json, ref index, ref success),
+                        _ => c
+                    });
+                }
+                else sb.Append(c);
             }
-            break;
-        }
-        if (!flag)
-        {
+
             success = false;
             return null;
         }
-        return stringBuilder.ToString();
-    }
 
-    protected static double ParseNumber(char[] json, ref int index, ref bool success)
-    {
-        EatWhitespace(json, ref index);
-        int lastIndexOfNumber = GetLastIndexOfNumber(json, index);
-        int length = lastIndexOfNumber - index + 1;
-        success = double.TryParse(new string(json, index, length), NumberStyles.Any, CultureInfo.InvariantCulture, out var result);
-        index = lastIndexOfNumber + 1;
-        return result;
-    }
-
-    protected static int GetLastIndexOfNumber(char[] json, int index)
-    {
-        int i;
-        for (i = index; i < json.Length && "0123456789+-.eE".IndexOf(json[i]) != -1; i++)
+        // Parse a Unicode escape sequence (e.g., \u1234)
+        private static char ParseUnicode(char[] json, ref int index, ref bool success)
         {
+            if (json.Length - index < 4)
+            {
+                success = false;
+                return '\0';
+            }
+
+            if (uint.TryParse(new string(json, index, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var result))
+            {
+                index += 4;
+                return (char)result;
+            }
+
+            success = false;
+            return '\0';
         }
-        return i - 1;
-    }
 
-    protected static void EatWhitespace(char[] json, ref int index)
-    {
-        while (index < json.Length && " \t\n\r".IndexOf(json[index]) != -1)
+        // Parse a numeric value (int or double)
+        protected static double ParseNumber(char[] json, ref int index, ref bool success)
         {
-            index++;
+            EatWhitespace(json, ref index);
+            int lastIndex = GetLastIndexOfNumber(json, index);
+            string numberStr = new string(json, index, lastIndex - index + 1);
+
+            success = double.TryParse(numberStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var result);
+            index = lastIndex + 1;
+            return result;
         }
-    }
 
-    protected static int LookAhead(char[] json, int index)
-    {
-        int index2 = index;
-        return NextToken(json, ref index2);
-    }
-
-    protected static int NextToken(char[] json, ref int index)
-    {
-        EatWhitespace(json, ref index);
-        if (index == json.Length)
+        // Get the last index of a number
+        protected static int GetLastIndexOfNumber(char[] json, int index)
         {
-            return 0;
+            while (index < json.Length && "0123456789+-.eE".IndexOf(json[index]) != -1) index++;
+            return index - 1;
         }
-        char c = json[index];
-        index++;
-        switch (c)
+
+        // Skip whitespace characters
+        protected static void EatWhitespace(char[] json, ref int index)
         {
-            case '{':
-                return 1;
-            case '}':
-                return 2;
-            case '[':
-                return 3;
-            case ']':
-                return 4;
-            case ',':
-                return 6;
-            case '"':
-                return 7;
-            case '-':
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                return 8;
-            case ':':
-                return 5;
-            default:
+            while (index < json.Length && " \t\n\r".IndexOf(json[index]) != -1) index++;
+        }
+
+        // Check next token without advancing index
+        protected static int LookAhead(char[] json, int index)
+        {
+            int tempIndex = index;
+            return NextToken(json, ref tempIndex);
+        }
+
+        // Fetch the next token and advance the index
+        protected static int NextToken(char[] json, ref int index)
+        {
+            EatWhitespace(json, ref index);
+            if (index == json.Length) return 0;
+
+            char c = json[index++];
+            return c switch
+            {
+                '{' => 1,
+                '}' => 2,
+                '[' => 3,
+                ']' => 4,
+                ',' => 6,
+                '"' => 7,
+                ':' => 5,
+                '-' or >= '0' and <= '9' => 8,
+                _ when Matches(json, index - 1, "true") => 9,
+                _ when Matches(json, index - 1, "false") => 10,
+                _ when Matches(json, index - 1, "null") => 11,
+                _ => 0
+            };
+        }
+
+        // Helper method to match literal strings
+        private static bool Matches(char[] json, int index, string literal)
+        {
+            if (json.Length - index < literal.Length) return false;
+            for (int i = 0; i < literal.Length; i++)
+            {
+                if (json[index + i] != literal[i]) return false;
+            }
+            index += literal.Length;
+            return true;
+        }
+
+        // Serialize an object to JSON
+        protected static bool SerializeValue(object value, StringBuilder builder)
+        {
+            return value switch
+            {
+                string str => SerializeString(str, builder),
+                IDictionary dict => SerializeObject(dict, builder),
+                IList list => SerializeArray(list, builder),
+                bool b => builder.Append(b ? "true" : "false").ToString() != null,
+                null => builder.Append("null").ToString() != null,
+                _ when value is ValueType => SerializeNumber(Convert.ToDouble(value), builder),
+                _ => false
+            };
+        }
+
+        // Serialize a dictionary (object)
+        protected static bool SerializeObject(IDictionary obj, StringBuilder builder)
+        {
+            builder.Append("{");
+            bool first = true;
+            foreach (DictionaryEntry entry in obj)
+            {
+                if (!first) builder.Append(", ");
+                SerializeString(entry.Key.ToString(), builder);
+                builder.Append(":");
+                SerializeValue(entry.Value, builder);
+                first = false;
+            }
+            builder.Append("}");
+            return true;
+        }
+
+        // Serialize a list (array)
+        protected static bool SerializeArray(IList array, StringBuilder builder)
+        {
+            builder.Append("[");
+            bool first = true;
+            foreach (object item in array)
+            {
+                if (!first) builder.Append(", ");
+                SerializeValue(item, builder);
+                first = false;
+            }
+            builder.Append("]");
+            return true;
+        }
+
+        // Serialize a string value
+        protected static bool SerializeString(string str, StringBuilder builder)
+        {
+            builder.Append("\"");
+            foreach (char c in str)
+            {
+                switch (c)
                 {
-                    index--;
-                    int num = json.Length - index;
-                    if (num >= 5 && json[index] == 'f' && json[index + 1] == 'a' && json[index + 2] == 'l' && json[index + 3] == 's' && json[index + 4] == 'e')
-                    {
-                        index += 5;
-                        return 10;
-                    }
-                    if (num >= 4 && json[index] == 't' && json[index + 1] == 'r' && json[index + 2] == 'u' && json[index + 3] == 'e')
-                    {
-                        index += 4;
-                        return 9;
-                    }
-                    if (num >= 4 && json[index] == 'n' && json[index + 1] == 'u' && json[index + 2] == 'l' && json[index + 3] == 'l')
-                    {
-                        index += 4;
-                        return 11;
-                    }
-                    return 0;
+                    case '"': builder.Append("\\\""); break;
+                    case '\\': builder.Append("\\\\"); break;
+                    case '\b': builder.Append("\\b"); break;
+                    case '\f': builder.Append("\\f"); break;
+                    case '\n': builder.Append("\\n"); break;
+                    case '\r': builder.Append("\\r"); break;
+                    case '\t': builder.Append("\\t"); break;
+                    default:
+                        int charValue = c;
+                        if (charValue >= 32 && charValue <= 126)
+                        {
+                            builder.Append(c);
+                        }
+                        else
+                        {
+                            builder.Append("\\u" + charValue.ToString("x4"));
+                        }
+                        break;
                 }
+            }
+            builder.Append("\"");
+            return true;
         }
-    }
 
-    protected static bool SerializeValue(object value, StringBuilder builder)
-    {
-        bool result = true;
-        if (value is string)
+        // Serialize a number
+        protected static bool SerializeNumber(double number, StringBuilder builder)
         {
-            result = SerializeString((string)value, builder);
+            builder.Append(number.ToString(CultureInfo.InvariantCulture));
+            return true;
         }
-        else if (value is IDictionary)
-        {
-            result = SerializeObject((IDictionary)value, builder);
-        }
-        else if (value is IList)
-        {
-            result = SerializeArray(value as IList, builder);
-        }
-        else if (value is bool && (bool)value)
-        {
-            builder.Append("true");
-        }
-        else if (value is bool && !(bool)value)
-        {
-            builder.Append("false");
-        }
-        else if (value is ValueType)
-        {
-            result = SerializeNumber(Convert.ToDouble(value), builder);
-        }
-        else if (value == null)
-        {
-            builder.Append("null");
-        }
-        else
-        {
-            result = false;
-        }
-        return result;
-    }
-
-    protected static bool SerializeObject(IDictionary anObject, StringBuilder builder)
-    {
-        builder.Append("{");
-        IDictionaryEnumerator enumerator = anObject.GetEnumerator();
-        bool flag = true;
-        while (enumerator.MoveNext())
-        {
-            string aString = enumerator.Key.ToString();
-            object value = enumerator.Value;
-            if (!flag)
-            {
-                builder.Append(", ");
-            }
-            SerializeString(aString, builder);
-            builder.Append(":");
-            if (!SerializeValue(value, builder))
-            {
-                return false;
-            }
-            flag = false;
-        }
-        builder.Append("}");
-        return true;
-    }
-
-    protected static bool SerializeArray(IList anArray, StringBuilder builder)
-    {
-        builder.Append("[");
-        bool flag = true;
-        for (int i = 0; i < anArray.Count; i++)
-        {
-            object value = anArray[i];
-            if (!flag)
-            {
-                builder.Append(", ");
-            }
-            if (!SerializeValue(value, builder))
-            {
-                return false;
-            }
-            flag = false;
-        }
-        builder.Append("]");
-        return true;
-    }
-
-    protected static bool SerializeString(string aString, StringBuilder builder)
-    {
-        builder.Append("\"");
-        char[] array = aString.ToCharArray();
-        foreach (char c in array)
-        {
-            switch (c)
-            {
-                case '"':
-                    builder.Append("\\\"");
-                    continue;
-                case '\\':
-                    builder.Append("\\\\");
-                    continue;
-                case '\b':
-                    builder.Append("\\b");
-                    continue;
-                case '\f':
-                    builder.Append("\\f");
-                    continue;
-                case '\n':
-                    builder.Append("\\n");
-                    continue;
-                case '\r':
-                    builder.Append("\\r");
-                    continue;
-                case '\t':
-                    builder.Append("\\t");
-                    continue;
-            }
-            int num = Convert.ToInt32(c);
-            if (num >= 32 && num <= 126)
-            {
-                builder.Append(c);
-            }
-            else
-            {
-                builder.Append("\\u" + Convert.ToString(num, 16).PadLeft(4, '0'));
-            }
-        }
-        builder.Append("\"");
-        return true;
-    }
-
-    protected static bool SerializeNumber(double number, StringBuilder builder)
-    {
-        builder.Append(Convert.ToString(number, CultureInfo.InvariantCulture));
-        return true;
     }
 }
