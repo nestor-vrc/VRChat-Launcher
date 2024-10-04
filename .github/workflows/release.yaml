@@ -42,8 +42,16 @@ jobs:
           echo "file_exists=false" >> $GITHUB_ENV
         fi
 
+    - name: 📅 Create tag
+      run: |
+        if [ "${{ github.ref }}" != "refs/tags/*" ]; then
+          git tag "v${{ github.run_number }}"
+          git push origin "v${{ github.run_number }}"
+        fi
+
     - name: 🚀 Publish release
       uses: softprops/action-gh-release@v2
       if: env.file_exists == 'true'
       with:
         files: VRCLaunch-${{ github.ref_name }}.zip
+        tag_name: "v${{ github.run_number }}"
