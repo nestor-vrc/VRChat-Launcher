@@ -49,14 +49,12 @@ namespace launch
         // Method to install EasyAntiCheat if not found
         private static void InstallEasyAntiCheat(string baseDirectory, string productId)
         {
-            using (Process installProcess = new())
-            {
-                installProcess.StartInfo.FileName = Path.Combine(baseDirectory, "EasyAntiCheat", "EasyAntiCheat_EOS_Setup.exe");
-                installProcess.StartInfo.Arguments = $"install {productId}";
-                installProcess.StartInfo.WorkingDirectory = baseDirectory;
-                installProcess.Start();
-                installProcess.WaitForExit();
-            }
+            using Process installProcess = new();
+            installProcess.StartInfo.FileName = Path.Combine(baseDirectory, "EasyAntiCheat", "EasyAntiCheat_EOS_Setup.exe");
+            installProcess.StartInfo.Arguments = $"install {productId}";
+            installProcess.StartInfo.WorkingDirectory = baseDirectory;
+            installProcess.Start();
+            installProcess.WaitForExit();
         }
 
         // Method to determine CPU affinity, either from arguments or based on the processor
@@ -137,30 +135,28 @@ namespace launch
         // Method to start the main application with the given arguments
         private static void StartProtectedGame(string baseDirectory, string arguments, IntPtr? affinityMask, ProcessPriorityClass? priorityClass)
         {
-            using (Process gameProcess = new())
+            using Process gameProcess = new();
+            gameProcess.StartInfo.FileName = Path.Combine(baseDirectory, "start_protected_game.exe");
+            gameProcess.StartInfo.Arguments = arguments;
+            gameProcess.StartInfo.WorkingDirectory = baseDirectory;
+
+            gameProcess.Start();
+
+            // Set processor affinity and priority if applicable
+            try
             {
-                gameProcess.StartInfo.FileName = Path.Combine(baseDirectory, "start_protected_game.exe");
-                gameProcess.StartInfo.Arguments = arguments;
-                gameProcess.StartInfo.WorkingDirectory = baseDirectory;
-
-                gameProcess.Start();
-
-                // Set processor affinity and priority if applicable
-                try
+                if (affinityMask.HasValue)
                 {
-                    if (affinityMask.HasValue)
-                    {
-                        gameProcess.ProcessorAffinity = affinityMask.Value;
-                    }
-                    if (priorityClass.HasValue)
-                    {
-                        gameProcess.PriorityClass = priorityClass.Value;
-                    }
+                    gameProcess.ProcessorAffinity = affinityMask.Value;
                 }
-                catch (Win32Exception)
+                if (priorityClass.HasValue)
                 {
-                    // Handle potential permission issues silently
+                    gameProcess.PriorityClass = priorityClass.Value;
                 }
+            }
+            catch (Win32Exception)
+            {
+                // Handle potential permission issues silently
             }
         }
     }
