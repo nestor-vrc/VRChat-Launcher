@@ -1,0 +1,49 @@
+name: 🚀 Release
+
+on: 
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  file_exists: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: ⬇️ Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🧰 Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.402
+
+    - name: 🧹 Restore dependencies
+      run: dotnet restore VRCLaunch.sln
+
+    - name: 🛠️ Build
+      run: dotnet build VRCLaunch.sln --no-restore
+
+    - name: 📦 Zip release
+      uses: montudor/action-zip@v1
+      with:
+        args: zip -qq -r VRCLaunch-${{ github.ref_name }}.zip bin/Debug/net472/launch.exe LICENSE README.md
+
+    - name: 🔍 Check if zip file exists
+      id: check_zip
+      run: |
+        if [ -f "VRCLaunch-${{ github.ref_name }}.zip" ]; then
+          echo "file_exists=true" >> $GITHUB_ENV
+        else
+          echo "file_exists=false" >> $GITHUB_ENV
+        fi
+
+    - name: 🚀 Publish release
+      uses: softprops/action-gh-release@v2
+      if: env.file_exists == 'true'
+      with:
+        files: VRCLaunch-${{ github.ref_name }}.zip
